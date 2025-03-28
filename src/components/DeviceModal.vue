@@ -1,3 +1,4 @@
+src/components/DeviceModal.vue
 <template>
   <div v-if="isVisible" class="modal" @click.self="close">
     <div class="modal-content">
@@ -62,7 +63,7 @@ export default defineComponent({
   border-radius: 8px;
   color: var(--text-color);
   min-width: 250px;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
 }
 
 h2 {

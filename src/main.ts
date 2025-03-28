@@ -8,48 +8,52 @@ const app = createApp(App);
 const pinia = createPinia();
 app.use(pinia);
 
-// Получаем экземпляр хранилища после инициализации Pinia
+// Инициализация хранилища
 const deviceStore = useDeviceStore();
 
-// Инициализация устройств
-deviceStore.initDevices();
+// Глобальная обработка ошибок
+app.config.errorHandler = (err) => {
+  console.error('Global Vue error:', err);
+};
 
-// Функция для периодического обновления данных с датчиков
+// Обработчик ошибок для хранилища
+deviceStore.$onAction(({ name, onError }) => {
+  onError((error) => {
+    console.error(`Action ${name} failed:`, error);
+    deviceStore.resetDevices();
+  });
+});
+
+// Инициализация устройств
+deviceStore.initDevices().catch(err => {
+  console.error('Initial device load failed:', err);
+});
+
+// Функция обновления данных сенсоров
 const updateSensorData = async () => {
   try {
     const data = await fetchSensorData();
-    if (data.length > 0) {
-      // Добавляем только последние данные
+    if (Array.isArray(data) && data.length > 0) {
       deviceStore.addSensorData(data[data.length - 1]);
     } else {
-      // Если API не вернуло данные, генерируем фиктивные для демо
       deviceStore.addSensorData({
         timestamp: new Date().toISOString(),
-        temperature: Math.random() * 10 + 20, // 20-30°C
-        humidity: Math.random() * 30 + 50, // 50-80%
+        temperature: 22 + Math.random() * 6,
+        humidity: 50 + Math.random() * 30
       });
     }
   } catch (error) {
-    console.error('Failed to update sensor data:', error);
-    // Генерируем фиктивные данные в случае ошибки
-    deviceStore.addSensorData({
-      timestamp: new Date().toISOString(),
-      temperature: Math.random() * 10 + 20,
-      humidity: Math.random() * 30 + 50,
-    });
+    console.error('Sensor data update failed:', error);
   }
 };
 
-// Запускаем начальное обновление данных
+// Периодическое обновление данных
+const dataUpdateInterval = setInterval(updateSensorData, 30000);
 updateSensorData();
 
-// Запускаем обновление данных с интервалом
-const dataUpdateInterval = setInterval(updateSensorData, 30000); // Каждые 30 секунд
-
-// Очистка интервала при закрытии приложения
+// Очистка при размонтировании
 window.addEventListener('beforeunload', () => {
   clearInterval(dataUpdateInterval);
 });
 
-// Запускаем приложение
 app.mount('#app');

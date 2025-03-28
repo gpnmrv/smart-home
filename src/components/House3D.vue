@@ -1,11 +1,14 @@
+src/components/House3D.vue
 <template>
-  <div ref="container" class="house-container"></div>
-  <DeviceModal
-    v-if="isModalVisible"
-    :isVisible="isModalVisible"
-    @close="isModalVisible = false"
-    :sensorData="sensorData"
-  />
+  <div class="scene-wrapper">
+    <div ref="container" class="house-container"></div>
+  </div>
+    <DeviceModal
+      v-if="isModalVisible"
+      :isVisible="isModalVisible"
+      @close="isModalVisible = false"
+      :sensorData="sensorData"
+    />
 </template>
 
 <script lang="ts">
@@ -28,13 +31,32 @@ export default defineComponent({
   setup(props) {
     const container = ref<HTMLElement | null>(null);
     const isModalVisible = ref(false);
+    const isMobile = ref(window.innerWidth <= 768);
+    const sceneScale = ref(isMobile.value ? 0.7 : 1.0); // Масштаб 70% для мобильных
+   
+    const handleResize = () => {
+      isMobile.value = window.innerWidth <= 768;
+      sceneScale.value = isMobile.value ? 0.7 : 1.0;
+      
+      if (houseGroup.value) {
+        houseGroup.value.scale.set(sceneScale.value, sceneScale.value, sceneScale.value);
+      }
+      
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    };
+
     const sensorData = ref({
       timestamp: new Date(),
       temperature: 25,
       humidity: 60
     });
 
-    // Three.js objects
+    const touchStartX = ref(0);
+    const touchStartY = ref(0);
+    const isTouching = ref(false);
+
     let scene: THREE.Scene;
     let camera: THREE.PerspectiveCamera;
     let renderer: THREE.WebGLRenderer;
@@ -47,7 +69,6 @@ export default defineComponent({
     let fanBlades: THREE.Group | null = null;
     const rotationSpeed = ref(0);
 
-    // Shallow refs for Three.js objects
     const houseGroup = shallowRef<THREE.Group | null>(null);
     const houseHeight = 4;
     const room1 = shallowRef<THREE.Group | null>(null);
@@ -55,7 +76,6 @@ export default defineComponent({
 
     const deviceStore = useDeviceStore();
 
-    // Speed presets
     const FAN_SPEEDS = {
       OFF: 0,
       LOW: 0.03,
@@ -102,7 +122,6 @@ export default defineComponent({
       return { lampGroup, lampLight, baseMaterial };
     };
 
-    // Watch for fan state and temperature changes
     watch(
       () => [deviceStore.fanIsOn, deviceStore.temperature],
       () => {
@@ -114,14 +133,12 @@ export default defineComponent({
     const createFan = (houseHeight: number, houseGroup: THREE.Group): THREE.Group => {
       const fanGroup: THREE.Group = new THREE.Group();
 
-      // Fan base
       const baseGeometry = new THREE.CylinderGeometry(0.1, 0.1, 0.2, 32);
       const baseMaterial = new THREE.MeshPhongMaterial({ color: 0x808080 });
       const base = markNonReactive(new THREE.Mesh(baseGeometry, baseMaterial));
       base.position.set(0, 0, 0);
       fanGroup.add(base);
 
-      // Fan blades
       const bladesGroup = markNonReactive(new THREE.Group());
       const bladeGeometry = new THREE.BoxGeometry(1.5, 0.05, 0.2);
       const bladeMaterial = new THREE.MeshPhongMaterial({ color: 0x8B4513 });
@@ -137,7 +154,6 @@ export default defineComponent({
       fanGroup.position.set(0, houseHeight / 2 - 0.1, 0);
       houseGroup.add(fanGroup);
 
-      // Animation loop
       const animateBlades = () => {
         requestAnimationFrame(animateBlades);
         if (bladesGroup) {
@@ -150,10 +166,8 @@ export default defineComponent({
     };
 
     const applyTheme = (isDark: boolean) => {
-      // Scene background
       scene.background = new THREE.Color(isDark ? 0x121212 : 0xf0f0f0);
       if (!houseGroup.value) return;
-      // Wall materials
       const houseGroupObj = houseGroup.value;
       const wallMaterial = houseGroupObj.children
         .filter((child) => child instanceof THREE.Mesh)
@@ -164,7 +178,6 @@ export default defineComponent({
         wallMaterial.color.set(isDark ? 0x444444 : 0x326c96);
       }
 
-      // Floor material
       const floorObject = houseGroupObj.children
         .find((child) => child.position.y === -houseHeight / 2 + 0.2 / 2);
 
@@ -176,7 +189,6 @@ export default defineComponent({
         floorMaterial.color.set(isDark ? 0x333333 : 0x573815);
       }
 
-      // Room materials
       if (room1.value && room2.value) {
         const room1Obj = room1.value;
         const room2Obj = room2.value;
@@ -203,10 +215,37 @@ export default defineComponent({
       }
     };
 
+    const onTouchStart = (event: TouchEvent) => {
+      if (!container.value?.contains(event.target as Node)) return;
+      
+      isTouching.value = true;
+      touchStartX.value = event.touches[0].clientX;
+      touchStartY.value = event.touches[0].clientY;
+      event.preventDefault();
+    };
 
+    const onTouchMove = (event: TouchEvent) => {
+      if (!isTouching.value || !houseGroup.value) return;
+      
+      const touchX = event.touches[0].clientX;
+      const touchY = event.touches[0].clientY;
+      
+      const deltaX = touchX - touchStartX.value;
+      const deltaY = touchY - touchStartY.value;
+      
+      houseGroup.value.rotation.y += deltaX * 0.01;
+      houseGroup.value.rotation.x += deltaY * 0.01;
+      
+      touchStartX.value = touchX;
+      touchStartY.value = touchY;
+      event.preventDefault();
+    };
+
+    const onTouchEnd = () => {
+      isTouching.value = false;
+    };
 
     onMounted(() => {
-      // Initialize Three.js scene
       scene = new THREE.Scene();
       applyTheme(props.isDarkTheme);
       camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
@@ -220,25 +259,20 @@ export default defineComponent({
         container.value.appendChild(renderer.domElement);
       }
 
-      // Lights
       const ambientLight = markNonReactive(new THREE.AmbientLight(0x404040));
       scene.add(ambientLight);
 
-      // Create lamp
       const { lampGroup, lampLight: createdLampLight, baseMaterial } = createLamp();
       lampLight = createdLampLight;
 
-      // Create house group
       const newHouseGroup = markNonReactive(new THREE.Group()) as THREE.Group;
       newHouseGroup.add(lampGroup);
       houseGroup.value = newHouseGroup;
 
-      // House dimensions
       const houseWidth = 6;
       const houseDepth = 6;
       const wallThickness = 0.2;
 
-      // Materials
       const wallMaterial = new THREE.MeshPhongMaterial({
         color: 0x326c96,
         transparent: true,
@@ -253,7 +287,6 @@ export default defineComponent({
         depthWrite: false,
       });
 
-      // Helper function to create walls
       const createWall = (
         width: number,
         height: number,
@@ -269,17 +302,13 @@ export default defineComponent({
         return wall;
       };
 
-      // Create house structure
       const houseGroupObj = houseGroup.value;
-      // Walls
       houseGroupObj.add(createWall(houseWidth, houseHeight, wallThickness, { x: 0, y: 0, z: houseDepth / 2 - wallThickness / 2 }, wallMaterial));
       houseGroupObj.add(createWall(houseWidth, houseHeight, wallThickness, { x: 0, y: 0, z: -houseDepth / 2 + wallThickness / 2 }, wallMaterial));
       houseGroupObj.add(createWall(wallThickness, houseHeight, houseDepth, { x: -houseWidth / 2 + wallThickness / 2, y: 0, z: 0 }, wallMaterial));
       houseGroupObj.add(createWall(wallThickness, houseHeight, houseDepth, { x: houseWidth / 2 - wallThickness / 2, y: 0, z: 0 }, wallMaterial));
-      // Floor
       houseGroupObj.add(createWall(houseWidth, wallThickness, houseDepth, { x: 0, y: -houseHeight / 2 + wallThickness / 2, z: 0 }, floorMaterial));
 
-      // Ceiling (invisible for raycasting)
       const ceilingGeometry = new THREE.PlaneGeometry(houseWidth, houseDepth);
       const ceilingMaterial = new THREE.MeshBasicMaterial({ visible: false });
       const ceiling = markNonReactive(new THREE.Mesh(ceilingGeometry, ceilingMaterial));
@@ -291,7 +320,6 @@ export default defineComponent({
       houseGroupObj.position.set(0, 0, 0);
       scene.add(houseGroupObj);
 
-      // Create rooms helper function
       const createRoom = (color: number, position: { x: number; y: number; z: number }) => {
         const roomGroup = markNonReactive(new THREE.Group());
         const roomWidth = 2;
@@ -321,7 +349,6 @@ export default defineComponent({
         return roomGroup;
       };
 
-      // Create rooms
       room1.value = createRoom(0x967532, { 
         x: -houseWidth / 2 + wallThickness / 2 + 1, 
         y: 0, 
@@ -337,13 +364,14 @@ export default defineComponent({
       houseGroupObj.add(room1.value);
       houseGroupObj.add(room2.value);
 
-      // Create fan
       fanBlades = createFan(houseHeight, houseGroupObj);
 
-      // Camera position
-      camera.position.z = 10;
+      camera.position.z = isMobile.value ? 12 : 8;
 
-      // Mouse controls
+      if (isMobile.value && houseGroup.value) {
+        houseGroup.value.scale.set(0.8, 0.8, 0.8); 
+}
+
       const houseContainer = container.value;
       const onMouseDown = (event: MouseEvent) => {
         if (houseContainer?.contains(event.target as Node)) {
@@ -362,7 +390,12 @@ export default defineComponent({
       window.addEventListener('mouseup', onMouseUp);
       window.addEventListener('mousemove', onMouseMove);
 
-      // Raycasting for clicks
+      window.addEventListener('touchstart', onTouchStart);
+      window.addEventListener('touchmove', onTouchMove, { passive: false });
+      window.addEventListener('touchend', onTouchEnd);
+
+      window.addEventListener('resize', handleResize);
+
       const raycaster = new THREE.Raycaster();
       const mouse = new THREE.Vector2();
       window.addEventListener('click', (event) => {
@@ -375,7 +408,6 @@ export default defineComponent({
         if (intersects.length > 0) {
           const clickedObject = intersects[0].object;
           
-          // Improved room detection
           const findRoomParent = (obj: THREE.Object3D): THREE.Group | null => {
             if (!obj.parent) return null;
             if (obj.parent === room1.value || obj.parent === room2.value) return obj.parent as THREE.Group;
@@ -385,24 +417,21 @@ export default defineComponent({
           const roomParent = findRoomParent(clickedObject);
           
           if (roomParent === room1.value || roomParent === room2.value) {
-            // Update sensor data before showing modal
             sensorData.value = {
               timestamp: new Date(),
               temperature: deviceStore.temperature,
-              humidity: Math.floor(Math.random() * 30) + 50 // Random humidity for demo
+              humidity: Math.floor(Math.random() * 30) + 50 
             };
             isModalVisible.value = true;
             console.log('Room clicked, opening modal');
           }
 
-          // Lamp toggle
           if (clickedObject === base || clickedObject.parent === lampGroup) {
             deviceStore.toggleLamp();
           }
         }
       });
      
-      // Watch for theme changes
       watch(
         () => props.isDarkTheme,
         (isDark) => {
@@ -411,7 +440,6 @@ export default defineComponent({
         { immediate: false }
       );
 
-      // Lamp state watcher
       watch(
         () => deviceStore.isLampOn,
         (isOn) => {
@@ -422,7 +450,6 @@ export default defineComponent({
         }
       );
 
-      // Main animation loop
       const animate = () => {
         requestAnimationFrame(animate);
         
@@ -435,11 +462,13 @@ export default defineComponent({
       };
       animate();
 
-      // Cleanup
       return () => {
         window.removeEventListener('mousedown', onMouseDown);
         window.removeEventListener('mouseup', onMouseUp);
         window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('touchstart', onTouchStart);
+        window.removeEventListener('touchmove', onTouchMove);
+        window.removeEventListener('touchend', onTouchEnd);
       };
     });
 
@@ -455,8 +484,18 @@ export default defineComponent({
 <style scoped>
 .house-container {
   width: 100%;
-  height: 100vh;
-  position: relative;
-  z-index: 1;
+  height: 100%;
+}
+
+@media (max-width: 768px) {
+  .scene-wrapper {
+    height: 66.6vh;
+  }
+  
+  .house-container {
+    position: absolute;
+    top: -25vh; 
+    height: 100vh;
+  }
 }
 </style>

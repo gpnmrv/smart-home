@@ -2,54 +2,66 @@ import { defineStore } from 'pinia';
 import { SmartDevice, SensorData } from '../types/devices';
 import { fetchDevices } from '../utils/api';
 
+interface DeviceState {
+  devices: SmartDevice[];
+  sensorData: SensorData[];
+  isLampOn: boolean;
+  fanIsOn: boolean;
+  temperature: number;
+  devicePower: {
+    lamp: number;
+    fan: number;
+    thermostat: number;
+    sensor: number;
+  };
+}
+
 export const useDeviceStore = defineStore('devices', {
-  state: () => ({
-    devices: [] as SmartDevice[],
-    sensorData: [] as SensorData[],
-    isLampOn: true, // Состояние лампы
-    fanIsOn: true,   // Состояние вентилятора (вкл/выкл)
-    temperature: 25, // Температура
+  state: (): DeviceState => ({
+    devices: [],
+    sensorData: [],
+    isLampOn: true,
+    fanIsOn: true,
+    temperature: 25,
     devicePower: {
-      lamp: 60,       // Лампа 60W
-      fan: 50,        // Вентилятор 50W (фиксированная мощность)
-      thermostat: 15, // Термостат 15W
-      sensor: 5       // Датчик 5W
+      lamp: 60,
+      fan: 50,
+      thermostat: 15,
+      sensor: 5
     }
   }),
 
   getters: {
-    // Общее потребление энергии
-    totalPowerConsumption(): number {
-      let total = 0;
-
-      // Учет лампы
-      if (this.isLampOn) total += this.devicePower.lamp;
-
-      // Учет вентилятора (если включен)
-      if (this.fanIsOn) total += this.devicePower.fan;
-
-      // Учет других устройств из списка
-      total += this.devices
-        .filter(device => device.status === 'on')
-        .reduce((sum, device) => sum + device.power, 0);
-
-      return total;
+    validDevices(state): SmartDevice[] {
+      if (!Array.isArray(state.devices)) {
+        console.warn('Devices is not an array, resetting...');
+        return [];
+      }
+      return state.devices;
+    },
+    
+    totalPowerConsumption(state): number {
+      const devices = this.validDevices;
+      let total = state.isLampOn ? state.devicePower.lamp : 0;
+      total += state.fanIsOn ? state.devicePower.fan : 0;
+      
+      return devices
+        .filter(device => device?.status === 'on')
+        .reduce((sum, device) => sum + (device.power || 0), total);
     }
   },
 
   actions: {
-    // Инициализация устройств
     async initDevices() {
       try {
         const apiDevices = await fetchDevices();
-        this.devices = apiDevices.length > 0 ? apiDevices : this.getDefaultDevices();
+        this.devices = Array.isArray(apiDevices) ? apiDevices : this.getDefaultDevices();
       } catch (error) {
         console.error('Failed to fetch devices:', error);
         this.devices = this.getDefaultDevices();
       }
     },
 
-    // Дефолтные устройства
     getDefaultDevices(): SmartDevice[] {
       return [
         {
@@ -70,49 +82,59 @@ export const useDeviceStore = defineStore('devices', {
           power: this.devicePower.thermostat,
           status: 'on',
           temperature: this.temperature
-        },
-        {
-          id: 'sensor1',
-          type: 'sensor',
-          power: this.devicePower.sensor,
-          status: 'on',
-          humidity: 65,
-          temperature: 23
         }
       ];
     },
 
-    // Переключение лампы
+    resetDevices() {
+      this.devices = this.getDefaultDevices();
+    },
+
     toggleLamp() {
+      if (!Array.isArray(this.devices)) {
+        this.resetDevices();
+      }
       this.isLampOn = !this.isLampOn;
       this.updateDeviceStatus('lamp1', this.isLampOn);
     },
 
-    // Переключение вентилятора
     toggleFan() {
+      if (!Array.isArray(this.devices)) {
+        this.resetDevices();
+      }
       this.fanIsOn = !this.fanIsOn;
       this.updateDeviceStatus('fan1', this.fanIsOn);
     },
 
-    // Обновление статуса устройства
     updateDeviceStatus(deviceId: string, isOn: boolean) {
-      const device = this.devices.find(d => d.id === deviceId);
+      if (!Array.isArray(this.devices)) {
+        this.resetDevices();
+        return;
+      }
+      
+      const device = this.devices.find(d => d?.id === deviceId);
       if (device) {
         device.status = isOn ? 'on' : 'off';
       }
     },
 
-    // Установка температуры
     setTemperature(temp: number) {
       this.temperature = temp;
+      if (!Array.isArray(this.devices)) {
+        this.resetDevices();
+        return;
+      }
+      
       const thermostat = this.devices.find(d => d.id === 'thermostat1');
       if (thermostat) {
         thermostat.temperature = temp;
       }
     },
 
-    // Добавление данных с датчиков
     addSensorData(data: SensorData) {
+      if (!Array.isArray(this.sensorData)) {
+        this.sensorData = [];
+      }
       this.sensorData.push(data);
       if (this.sensorData.length > 100) {
         this.sensorData.shift();
