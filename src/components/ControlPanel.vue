@@ -2,12 +2,14 @@
   <div class="control-panel" :class="{ 'mobile-view': isMobile }">
     <h2 class="panel-title">Панель управления</h2>
     <div class="control-group">
-      <button @click="toggleLamp" :class="{ active: isLampOn }" class="control-button">
-        Свет {{ isLampOn ? '(Вкл)' : '(Выкл)' }}
-      </button>
-      <button @click="toggleFan" :class="{ active: fanIsOn }" class="control-button">
-        Вент. {{ fanIsOn ? '(Вкл)' : '(Выкл)' }}
-      </button>
+      <div class="button-row">
+        <button @click="toggleLamp" :class="{ active: isLampOn }" class="control-button">
+          Свет {{ isLampOn ? '(Вкл)' : '(Выкл)' }}
+        </button>
+        <button @click="toggleFan" :class="{ active: fanIsOn }" class="control-button">
+          Вент. {{ fanIsOn ? '(Вкл)' : '(Выкл)' }}
+        </button>
+      </div>
       <button 
         v-if="isMobile" 
         @click="toggleChartVisibility" 
@@ -159,7 +161,8 @@ export default defineComponent({
   border-radius: 5px;
   margin: 5px;
   transition: all 0.3s ease;
-  width: calc(50% - 10px);
+  width: 100%;
+  display: block;
 }
 
 .control-button:hover {
@@ -179,7 +182,7 @@ export default defineComponent({
 
 .temp-slider {
   width: 100%;
-  margin: 8px 0;
+  margin: 5px 0;
 }
 
 .power-consumption {
@@ -206,46 +209,58 @@ export default defineComponent({
     width: 90%;
     max-width: 350px;
     margin: 10px auto;
+    padding: 20px; 
     top: auto;
     right: auto;
     left: auto;
     bottom: 20px;
-    padding: 10px;
+    min-height: 250px; 
   }
 
   .control-panel.mobile-view {
     z-index: 1001;
   }
 
+  .button-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 5px;
+  }
+
+  .button-row .control-button {
+    width: calc(50% - 5px);
+    margin-bottom: 0;
+  }
+
   .chart-toggle {
-    width: 100%;
-    margin-top: 8px;
-    /* Убираем прозрачный фон для мобильной версии */
-    background-color: var(--button-bg-color);
+    display: block;
+    width: 80%;
+    margin: 10px auto 0;
+    max-width: 200px;
+    padding: 12px 15px;
   }
 
   .panel-title {
-    font-size: 1rem;
-    margin-bottom: 10px;
+    font-size: 1.1rem;
+    margin-bottom: 15px; 
   }
 
   .control-group {
-    padding: 8px;
-    margin-bottom: 10px;
+    margin-top: 5px; 
   }
 
   .control-button {
-    padding: 8px 10px;
-    font-size: 0.85rem;
-    width: calc(50% - 8px);
-  }
-
-  .temp-label {
+    padding: 10px 12px;
     font-size: 0.9rem;
   }
 
+  .temp-label {
+    font-size: 0.95rem; 
+  }
+
   .power-consumption {
-    font-size: 0.8rem;
+    font-size: 0.85rem; 
+    margin-top: 12px; 
   }
 }
 </style>

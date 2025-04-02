@@ -1,11 +1,20 @@
-src/components/DeviceModal.vue
 <template>
-  <div v-if="isVisible" class="modal" @click.self="close">
+  <div v-if="isVisible" class="modal" @click.self="handleClose">
     <div class="modal-content">
-      <h2>Данные с датчиков</h2>
-      <p>Температура: {{ sensorData.temperature }}°C</p>
-      <p>Влажность: {{ sensorData.humidity }}%</p>
-      <button @click="close">Закрыть</button>
+      <div class="modal-header">
+        <h2>Данные с датчиков</h2>
+        <button 
+          @click.stop="handleClose" 
+          class="close-button"
+          aria-label="Закрыть"
+        >
+          &times;
+        </button>
+      </div>
+      <div class="modal-body">
+        <p><strong>Температура:</strong> {{ sensorData.temperature }}°C</p>
+        <p><strong>Влажность:</strong> {{ sensorData.humidity }}%</p>
+      </div>
     </div>
   </div>
 </template>
@@ -32,12 +41,12 @@ export default defineComponent({
   },
   emits: ['close'],
   setup(props, { emit }) {
-    const close = () => {
+    const handleClose = () => {
       emit('close');
     };
 
     return {
-      close
+      handleClose
     };
   }
 });
@@ -50,41 +59,125 @@ export default defineComponent({
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(5px);
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1500;
+  z-index: 2000;
+  opacity: 0;
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  to {
+    opacity: 1;
+  }
 }
 
 .modal-content {
-  background-color: var(--background-color);
-  padding: 20px;
-  border-radius: 8px;
+  background-color: var(--panel-bg-color);
+  border-radius: 12px;
   color: var(--text-color);
-  min-width: 250px;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+  width: 90%;
+  max-width: 450px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+  transform: translateY(20px);
+  animation: slideUp 0.3s ease-out forwards;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
 }
 
-h2 {
-  margin-top: 0;
+@keyframes slideUp {
+  to {
+    transform: translateY(0);
+  }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--header-bg-color);
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
   color: var(--heading-color);
 }
 
-button {
-  padding: 10px 20px;
-  font-size: 16px;
-  cursor: pointer;
-  background-color: var(--button-bg-color);
-  color: var(--button-text-color);
+.modal-body {
+  padding: 25px 20px;
+}
+
+.modal-body p {
+  margin: 0 0 15px 0;
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+
+.modal-body p:last-child {
+  margin-bottom: 0;
+}
+
+.modal-body strong {
+  color: var(--accent-color);
+  font-weight: 500;
+}
+
+.close-button {
+  background: none;
   border: none;
-  border-radius: 5px;
-  margin-top: 15px;
+  font-size: 1.8rem;
+  cursor: pointer;
+  color: var(--text-secondary-color);
+  padding: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
   transition: all 0.2s ease;
 }
 
-button:hover {
-  opacity: 0.9;
-  transform: scale(1.05);
+.close-button:hover {
+  color: var(--error-color);
+  background-color: rgba(255, 0, 0, 0.1);
+  transform: rotate(90deg);
+}
+
+/* Адаптация для мобильных устройств */
+@media (max-width: 480px) {
+  .modal-content {
+    width: 95%;
+    max-width: none;
+  }
+  
+  .modal-header {
+    padding: 16px;
+  }
+  
+  .modal-header h2 {
+    font-size: 1.3rem;
+  }
+  
+  .modal-body {
+    padding: 20px 16px;
+  }
+  
+  .modal-body p {
+    font-size: 1rem;
+  }
+  
+  .close-button {
+    font-size: 1.5rem;
+    width: 32px;
+    height: 32px;
+  }
 }
 </style>

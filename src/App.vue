@@ -8,7 +8,7 @@
         :temperatureData="temperatureData" 
         :humidityData="humidityData" 
         :isDarkTheme="isDarkTheme"
-        :isMobile="false"
+        :isMobile="isMobile"
       />
       
       <div v-if="isMobile && chartVisible" class="mobile-chart-overlay" @click.self="chartVisible = false">
@@ -136,6 +136,7 @@ html, body {
   cursor: pointer;
   z-index: 1000;
   font-size: 12px;
+  border-radius: 5px;
 }
 
 .theme-toggle:hover {
@@ -159,11 +160,14 @@ html, body {
   position: relative;
   width: 90%;
   max-width: 500px;
-  max-height: 80vh;
-  height: 60vh;
-  background-color: var(--panel-bg-color);
+  max-height: 225px;
+  background-color: white;
   border-radius: 10px;
   padding: 20px;
+}
+
+.dark-theme .mobile-chart-container {
+  background-color: var(--panel-bg-color); 
 }
 
 .close-chart-btn {

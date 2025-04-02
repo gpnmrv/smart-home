@@ -1,14 +1,13 @@
-src/components/House3D.vue
 <template>
   <div class="scene-wrapper">
     <div ref="container" class="house-container"></div>
   </div>
-    <DeviceModal
-      v-if="isModalVisible"
-      :isVisible="isModalVisible"
-      @close="isModalVisible = false"
-      :sensorData="sensorData"
-    />
+  <DeviceModal
+    v-if="isModalVisible"
+    :isVisible="isModalVisible"
+    @close="isModalVisible = false"
+    :sensorData="sensorData"
+  />
 </template>
 
 <script lang="ts">
@@ -32,20 +31,11 @@ export default defineComponent({
     const container = ref<HTMLElement | null>(null);
     const isModalVisible = ref(false);
     const isMobile = ref(window.innerWidth <= 768);
-    const sceneScale = ref(isMobile.value ? 0.7 : 1.0); // Масштаб 70% для мобильных
-   
-    const handleResize = () => {
-      isMobile.value = window.innerWidth <= 768;
-      sceneScale.value = isMobile.value ? 0.7 : 1.0;
-      
-      if (houseGroup.value) {
-        houseGroup.value.scale.set(sceneScale.value, sceneScale.value, sceneScale.value);
-      }
-      
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    };
+    const sceneScale = ref(isMobile.value ? 0.7 : 1.0);
+    
+    const mouse = new THREE.Vector2();
+    const raycaster = new THREE.Raycaster();
+    const lampGroup = shallowRef<THREE.Group | null>(null);
 
     const sensorData = ref({
       timestamp: new Date(),
@@ -114,21 +104,14 @@ export default defineComponent({
       lampLight.castShadow = true;
       lampLight.visible = deviceStore.isLampOn;
 
-      const lampGroup = new THREE.Group();
-      lampGroup.add(base);
-      lampGroup.add(lampLight);
-      lampGroup.position.set(-2.5, -2, -2.5);
+      const group = new THREE.Group();
+      group.add(base);
+      group.add(lampLight);
+      group.position.set(-2.5, -2, -2.5);
+      lampGroup.value = group;
 
-      return { lampGroup, lampLight, baseMaterial };
+      return { lampLight, baseMaterial };
     };
-
-    watch(
-      () => [deviceStore.fanIsOn, deviceStore.temperature],
-      () => {
-        updateFanSpeed();
-      },
-      { immediate: true }
-    );
 
     const createFan = (houseHeight: number, houseGroup: THREE.Group): THREE.Group => {
       const fanGroup: THREE.Group = new THREE.Group();
@@ -166,8 +149,10 @@ export default defineComponent({
     };
 
     const applyTheme = (isDark: boolean) => {
+      if (!scene || !houseGroup.value) return;
+      
       scene.background = new THREE.Color(isDark ? 0x121212 : 0xf0f0f0);
-      if (!houseGroup.value) return;
+      
       const houseGroupObj = houseGroup.value;
       const wallMaterial = houseGroupObj.children
         .filter((child) => child instanceof THREE.Mesh)
@@ -215,13 +200,56 @@ export default defineComponent({
       }
     };
 
-    const onTouchStart = (event: TouchEvent) => {
+    const checkRoomIntersection = (clientX: number, clientY: number): boolean => {
+      if (!container.value || !camera || !room1.value || !room2.value) return false;
+      
+      const rect = container.value.getBoundingClientRect();
+      mouse.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      
+      const roomWalls = [
+        ...room1.value.children,
+        ...room2.value.children
+      ].filter(obj => obj instanceof THREE.Mesh);
+      
+      const intersects = raycaster.intersectObjects(roomWalls, true);
+      
+      if (intersects.length > 0) {
+        sensorData.value = {
+          timestamp: new Date(),
+          temperature: deviceStore.temperature,
+          humidity: Math.floor(Math.random() * 30) + 50
+        };
+        isModalVisible.value = true;
+        return true;
+      }
+      return false;
+    };
+
+    const handleMobileTouch = (event: TouchEvent) => {
       if (!container.value?.contains(event.target as Node)) return;
       
+      const touch = event.changedTouches[0];
+      const isRoomTouched = checkRoomIntersection(touch.clientX, touch.clientY);
+      
+      if (isRoomTouched) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    const handleDesktopClick = (event: MouseEvent) => {
+      if (!container.value?.contains(event.target as Node)) return;
+      checkRoomIntersection(event.clientX, event.clientY);
+    };
+
+    const onTouchStart = (event: TouchEvent) => {
+      if (!container.value?.contains(event.target as Node)) return;
       isTouching.value = true;
       touchStartX.value = event.touches[0].clientX;
       touchStartY.value = event.touches[0].clientY;
-      event.preventDefault();
     };
 
     const onTouchMove = (event: TouchEvent) => {
@@ -247,26 +275,34 @@ export default defineComponent({
 
     onMounted(() => {
       scene = new THREE.Scene();
-      applyTheme(props.isDarkTheme);
-      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1000);
-      renderer = new THREE.WebGLRenderer({ antialias: true });
+      scene.background = new THREE.Color(props.isDarkTheme ? 0x121212 : 0xf0f0f0);
+      
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.z = isMobile.value ? 12 : 8;
 
+      renderer = new THREE.WebGLRenderer({ 
+        antialias: true,
+        alpha: false 
+      });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       
       if (container.value) {
         container.value.appendChild(renderer.domElement);
+        container.value.addEventListener('touchmove', onTouchMove, { passive: false });
       }
 
       const ambientLight = markNonReactive(new THREE.AmbientLight(0x404040));
       scene.add(ambientLight);
 
-      const { lampGroup, lampLight: createdLampLight, baseMaterial } = createLamp();
+      const { lampLight: createdLampLight, baseMaterial } = createLamp();
       lampLight = createdLampLight;
 
       const newHouseGroup = markNonReactive(new THREE.Group()) as THREE.Group;
-      newHouseGroup.add(lampGroup);
+      if (lampGroup.value) {
+        newHouseGroup.add(lampGroup.value);
+      }
       houseGroup.value = newHouseGroup;
 
       const houseWidth = 6;
@@ -277,14 +313,16 @@ export default defineComponent({
         color: 0x326c96,
         transparent: true,
         opacity: 0.8,
-        depthWrite: false,
+        depthWrite: true,
+        depthTest: true
       });
 
       const floorMaterial = new THREE.MeshPhongMaterial({
         color: 0x573815,
         transparent: true,
         opacity: 1,
-        depthWrite: false,
+        depthWrite: true,
+        depthTest: true
       });
 
       const createWall = (
@@ -302,25 +340,24 @@ export default defineComponent({
         return wall;
       };
 
-      const houseGroupObj = houseGroup.value;
-      houseGroupObj.add(createWall(houseWidth, houseHeight, wallThickness, { x: 0, y: 0, z: houseDepth / 2 - wallThickness / 2 }, wallMaterial));
-      houseGroupObj.add(createWall(houseWidth, houseHeight, wallThickness, { x: 0, y: 0, z: -houseDepth / 2 + wallThickness / 2 }, wallMaterial));
-      houseGroupObj.add(createWall(wallThickness, houseHeight, houseDepth, { x: -houseWidth / 2 + wallThickness / 2, y: 0, z: 0 }, wallMaterial));
-      houseGroupObj.add(createWall(wallThickness, houseHeight, houseDepth, { x: houseWidth / 2 - wallThickness / 2, y: 0, z: 0 }, wallMaterial));
-      houseGroupObj.add(createWall(houseWidth, wallThickness, houseDepth, { x: 0, y: -houseHeight / 2 + wallThickness / 2, z: 0 }, floorMaterial));
+      houseGroup.value.add(createWall(houseWidth, houseHeight, wallThickness, { x: 0, y: 0, z: houseDepth/2 - wallThickness/2 }, wallMaterial));
+      houseGroup.value.add(createWall(houseWidth, houseHeight, wallThickness, { x: 0, y: 0, z: -houseDepth/2 + wallThickness/2 }, wallMaterial));
+      houseGroup.value.add(createWall(wallThickness, houseHeight, houseDepth, { x: -houseWidth/2 + wallThickness/2, y: 0, z: 0 }, wallMaterial));
+      houseGroup.value.add(createWall(wallThickness, houseHeight, houseDepth, { x: houseWidth/2 - wallThickness/2, y: 0, z: 0 }, wallMaterial));
+      houseGroup.value.add(createWall(houseWidth, wallThickness, houseDepth, { x: 0, y: -houseHeight/2 + wallThickness/2, z: 0 }, floorMaterial));
 
       const ceilingGeometry = new THREE.PlaneGeometry(houseWidth, houseDepth);
       const ceilingMaterial = new THREE.MeshBasicMaterial({ visible: false });
       const ceiling = markNonReactive(new THREE.Mesh(ceilingGeometry, ceilingMaterial));
-      ceiling.position.set(0, houseHeight / 2 - wallThickness / 2, 0);
+      ceiling.position.set(0, houseHeight/2 - wallThickness/2, 0);
       ceiling.rotation.x = Math.PI / 2;
       ceiling.raycast = () => {};
-      houseGroupObj.add(ceiling);
+      houseGroup.value.add(ceiling);
 
-      houseGroupObj.position.set(0, 0, 0);
-      scene.add(houseGroupObj);
+      houseGroup.value.position.set(0, 0, 0);
+      scene.add(houseGroup.value);
 
-      const createRoom = (color: number, position: { x: number; y: number; z: number }) => {
+       const createRoom = (color: number, position: { x: number; y: number; z: number }) => {
         const roomGroup = markNonReactive(new THREE.Group());
         const roomWidth = 2;
         const roomHeight = houseHeight - wallThickness;
@@ -328,7 +365,13 @@ export default defineComponent({
 
         const createWall = (width: number, height: number, depth: number, pos: { x: number; y: number; z: number }) => {
           const wallGeometry = new THREE.BoxGeometry(width, height, depth);
-          const wallMaterial = new THREE.MeshPhongMaterial({ color, transparent: true, opacity: 0.7 });
+          const wallMaterial = new THREE.MeshPhongMaterial({ 
+            color, 
+            transparent: true, 
+            opacity: 0.7,
+            depthTest: true,
+            depthWrite: true
+          });
           const wall = markNonReactive(new THREE.Mesh(wallGeometry, wallMaterial));
           wall.position.set(pos.x, pos.y, pos.z);
           wall.castShadow = true;
@@ -336,108 +379,78 @@ export default defineComponent({
           return wall;
         };
 
-        roomGroup.add(createWall(roomWidth, roomHeight, wallThickness, { x: 0, y: 0, z: roomDepth / 2 - wallThickness / 2 }));
-        roomGroup.add(createWall(roomWidth, roomHeight, wallThickness, { x: 0, y: 0, z: -roomDepth / 2 + wallThickness / 2 }));
-        roomGroup.add(createWall(wallThickness, roomHeight, roomDepth, { x: -roomWidth / 2 + wallThickness / 2, y: 0, z: 0 }));
-        roomGroup.add(createWall(wallThickness, roomHeight, roomDepth, { x: roomWidth / 2 - wallThickness / 2, y: 0, z: 0 }));
+        roomGroup.add(createWall(roomWidth, roomHeight, wallThickness, { x: 0, y: 0, z: roomDepth/2 - wallThickness/2 }));
+        roomGroup.add(createWall(roomWidth, roomHeight, wallThickness, { x: 0, y: 0, z: -roomDepth/2 + wallThickness/2 }));
+        roomGroup.add(createWall(wallThickness, roomHeight, roomDepth, { x: -roomWidth/2 + wallThickness/2, y: 0, z: 0 }));
+        roomGroup.add(createWall(wallThickness, roomHeight, roomDepth, { x: roomWidth/2 - wallThickness/2, y: 0, z: 0 }));
 
         roomGroup.position.set(
           position.x,
-          -houseHeight / 2 + wallThickness + roomHeight / 2,
+          -houseHeight/2 + wallThickness + roomHeight/2,
           position.z
         );
         return roomGroup;
       };
 
       room1.value = createRoom(0x967532, { 
-        x: -houseWidth / 2 + wallThickness / 2 + 1, 
+        x: -houseWidth/2 + wallThickness/2 + 1, 
         y: 0, 
-        z: houseDepth / 2 - wallThickness / 2 - 2 
+        z: houseDepth/2 - wallThickness/2 - 2 
       }) as THREE.Group;
 
       room2.value = createRoom(0x944026, { 
-        x: houseWidth / 2 - wallThickness / 2 - 1, 
+        x: houseWidth/2 - wallThickness/2 - 1, 
         y: 0, 
-        z: houseDepth / 2 - wallThickness / 2 - 2 
+        z: houseDepth/2 - wallThickness/2 - 2 
       }) as THREE.Group;
       
-      houseGroupObj.add(room1.value);
-      houseGroupObj.add(room2.value);
+      houseGroup.value.add(room1.value);
+      houseGroup.value.add(room2.value);
 
-      fanBlades = createFan(houseHeight, houseGroupObj);
-
-      camera.position.z = isMobile.value ? 12 : 8;
+      fanBlades = createFan(houseHeight, houseGroup.value);
 
       if (isMobile.value && houseGroup.value) {
-        houseGroup.value.scale.set(0.8, 0.8, 0.8); 
-}
-
-      const houseContainer = container.value;
-      const onMouseDown = (event: MouseEvent) => {
-        if (houseContainer?.contains(event.target as Node)) {
-          isMouseDown.value = true;
-        }
-      };
-      const onMouseUp = () => { isMouseDown.value = false; };
-      const onMouseMove = (event: MouseEvent) => {
-        if (isMouseDown.value && houseContainer?.contains(event.target as Node)) {
-          mouseX.value = (event.clientX / window.innerWidth) * 2 - 1;
-          mouseY.value = -(event.clientY / window.innerHeight) * 2 + 1;
-        }
-      };
-
-      window.addEventListener('mousedown', onMouseDown);
-      window.addEventListener('mouseup', onMouseUp);
-      window.addEventListener('mousemove', onMouseMove);
-
-      window.addEventListener('touchstart', onTouchStart);
-      window.addEventListener('touchmove', onTouchMove, { passive: false });
-      window.addEventListener('touchend', onTouchEnd);
-
-      window.addEventListener('resize', handleResize);
-
-      const raycaster = new THREE.Raycaster();
-      const mouse = new THREE.Vector2();
-      window.addEventListener('click', (event) => {
-        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-        raycaster.setFromCamera(mouse, camera);
-        const intersects = raycaster.intersectObjects(scene.children, true);
-
-        if (intersects.length > 0) {
-          const clickedObject = intersects[0].object;
-          
-          const findRoomParent = (obj: THREE.Object3D): THREE.Group | null => {
-            if (!obj.parent) return null;
-            if (obj.parent === room1.value || obj.parent === room2.value) return obj.parent as THREE.Group;
-            return findRoomParent(obj.parent);
-          };
-
-          const roomParent = findRoomParent(clickedObject);
-          
-          if (roomParent === room1.value || roomParent === room2.value) {
-            sensorData.value = {
-              timestamp: new Date(),
-              temperature: deviceStore.temperature,
-              humidity: Math.floor(Math.random() * 30) + 50 
-            };
-            isModalVisible.value = true;
-            console.log('Room clicked, opening modal');
+        houseGroup.value.scale.set(sceneScale.value, sceneScale.value, sceneScale.value);
+      }
+      
+      if (isMobile.value) {
+        container.value?.addEventListener('touchend', handleMobileTouch, { passive: false });
+        window.addEventListener('touchstart', onTouchStart);
+        window.addEventListener('touchend', onTouchEnd);
+      } else {
+        container.value?.addEventListener('click', handleDesktopClick);
+        window.addEventListener('mousedown', (e) => isMouseDown.value = container.value?.contains(e.target as Node) || false);
+        window.addEventListener('mouseup', () => isMouseDown.value = false);
+        window.addEventListener('mousemove', (e) => {
+          if (isMouseDown.value && container.value?.contains(e.target as Node)) {
+            mouseX.value = (e.clientX / window.innerWidth) * 2 - 1;
+            mouseY.value = -(e.clientY / window.innerHeight) * 2 + 1;
           }
+        });
+      }
 
-          if (clickedObject === base || clickedObject.parent === lampGroup) {
-            deviceStore.toggleLamp();
-          }
-        }
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
       });
-     
+
+      applyTheme(props.isDarkTheme);
+
+      watch(
+        () => [deviceStore.fanIsOn, deviceStore.temperature],
+        () => {
+          updateFanSpeed();
+        },
+        { immediate: true }
+      );
+
       watch(
         () => props.isDarkTheme,
         (isDark) => {
           applyTheme(isDark);
         },
-        { immediate: false }
+        { immediate: true } 
       );
 
       watch(
@@ -463,12 +476,20 @@ export default defineComponent({
       animate();
 
       return () => {
-        window.removeEventListener('mousedown', onMouseDown);
-        window.removeEventListener('mouseup', onMouseUp);
-        window.removeEventListener('mousemove', onMouseMove);
-        window.removeEventListener('touchstart', onTouchStart);
-        window.removeEventListener('touchmove', onTouchMove);
-        window.removeEventListener('touchend', onTouchEnd);
+        if (isMobile.value) {
+          container.value?.removeEventListener('touchend', handleMobileTouch);
+          window.removeEventListener('touchstart', onTouchStart);
+          window.removeEventListener('touchend', onTouchEnd);
+        } else {
+          container.value?.removeEventListener('click', handleDesktopClick);
+          window.removeEventListener('mousedown', () => {});
+          window.removeEventListener('mouseup', () => {});
+          window.removeEventListener('mousemove', () => {});
+        }
+        window.removeEventListener('resize', () => {});
+        if (container.value) {
+          container.value.removeEventListener('touchmove', onTouchMove);
+        }
       };
     });
 
@@ -485,6 +506,8 @@ export default defineComponent({
 .house-container {
   width: 100%;
   height: 100%;
+  touch-action: none;
+  position: relative;
 }
 
 @media (max-width: 768px) {
@@ -494,8 +517,9 @@ export default defineComponent({
   
   .house-container {
     position: absolute;
-    top: -25vh; 
+    top: -30vh;
     height: 100vh;
   }
+  
 }
 </style>
